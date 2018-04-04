@@ -89,16 +89,16 @@ class LMSTrainer(BaseEstimator):
 		self.analitic = analitic
 		self.theta = None
  		
-	def fit(self, x, y, learningRate=1.0, costFunc=defaultCost, threshold=None, iterations=None):
+	def fit(self, x, y, learningRate=0.000002, adaptiveLearning=False, learningAdaptionRate=0.1, adaptionThreshold=0.3, costFunc=defaultCost, convergenceThreshold=None, relativeThreshold=None):
 	
-		if threshold is None and iterations is None:
+		if relativeThreshold is None and convergenceThreshold is None:
 			raise RuntimeError("Need to specify stop criteria")
-		elif not (threshold is None or iterations is None):
+		elif not (relativeThreshold is None or convergenceThreshold is None):
 			raise RuntimeError("Can only use one stop criteria")
 			
 		print ("Training...")	#debug
-		if iterations is not None: print ("0.0%")	#debug
-		print ("Relative error: 0.0\nConversion rate: 0.0%")	#debug
+		print ("Relative error: 0.0\nAbsolute error: 0.0\nConvergence rate: 0.0%")	#debug
+		print ("Learning bias:", learningRate)	#debug
 		if self.analitic:
 			# TODO: FAZER POR MATRIZES
 			pass
@@ -106,9 +106,11 @@ class LMSTrainer(BaseEstimator):
 			self.theta = [1.0 for i in range(0, len(x[0])+1)]	#first theta does not have associated x value
 			
 			relativeCost = float("inf")
-			previousCost = None
-			it = 0
-			while threshold is None and it < iterations or iterations is None and relativeCost > threshold:
+			previousCost = float("inf")
+			convergenceRate = float("inf")
+			adaptionBias = 1.0+learningAdaptionRate
+			climbing = True
+			while relativeThreshold is None and abs(100.0*convergenceRate) > convergenceThreshold or convergenceThreshold is None and relativeCost > relativeThreshold:
 				evaluation = 0.0
 				
 				#prepare threads
@@ -120,34 +122,54 @@ class LMSTrainer(BaseEstimator):
 				for t in threads:
 					t.start()
 				
-				#wait for threads to finish
-				for t in threads:
-					t.join()
-					
-				#update theta values and calculate costs
+				#wait for threads to finish and evaluate the results
 				evaluation = 0.0
 				for t in threads:
-					self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
+					t.join()
 					evaluation = evaluation + t.cost
+				evaluation = evaluation/len(self.theta)	
 					
-				#debug
-				#if iterations is not None:
-				#	print ("\033[2A\r{0:.1f}%".format( 100.0*(it*len(self.theta) + j + 1)/(iterations*len(self.theta)) ))
-				
-				evaluation = evaluation/len(self.theta)		
-				if previousCost is None:
+				if previousCost == float("inf"):
 					relativeCost = abs(evaluation)
 					previousCost = relativeCost
-					conversionRate = 0.0
+					lastConvergenceRate = 0.0
 				else:
-					conversionRate = 100.0*(relativeCost/abs(evaluation - previousCost) - 1)
+					if convergenceRate != float("inf"):
+						lastConvergenceRate = convergenceRate
+					convergenceRate = abs(previousCost)/abs(evaluation) - 1
 					relativeCost = abs(evaluation - previousCost)
 					previousCost = evaluation
 				
-				print ("\033[2A\rRelative error: {0:.5f}            ".format(relativeCost))
-				print ("Conversion rate: {0:.1f}%   ".format(conversionRate))
+				#debug	
+				print ("\033[4A\rRelative error:", relativeCost, "                   ")
+				print ("Absolute error:", evaluation, "                ")
+				print ("Convergence rate: {0:.2f}%   ".format(100.0*convergenceRate))
+				print ("Learning bias:", learningRate, "                    ")
+				
+				#try to optimize learning bias	
+				if adaptiveLearning:
+				
+					if climbing:
+						#attemp to find the highest possible value for the learning rate
+						if convergenceRate - lastConvergenceRate < 0.0:
+							climbing = False
+							adaptionBias = 2.0 - adaptionBias
+							learningRate = learningRate*adaptionBias
+							
+						learningRate = learningRate*adaptionBias
+						adaptionBias = adaptionBias**2.0 - 2.0*adaptionBias + 2.0	#reduce climbing speed the more you climb
+					else:
+						#after climbing begin to reduce learning value to better approximate the result
+						if abs(convergenceRate - lastConvergenceRate) > adaptionThreshold or convergenceRate < 0.0:
+							learningRate = learningRate*adaptionBias
 						
-				it = it+1
+							#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
+							adaptionBias = adaptionBias*math.exp(-abs(convergenceRate)*(1.0-2.0*learningAdaptionRate))
+							#adaptionBias = (1.0-learningAdaptionRate)*adaptionBias
+	
+				#update theta values
+				for t in threads:
+					self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
 				
 
 			
@@ -179,7 +201,7 @@ else:
 trainX = x[:trainLimit]
 trainY = y[:trainLimit]
 #print (trainY)	#debug
-trainer.fit(trainX, trainY, learningRate=0.000002, threshold=0.0001)
+trainer.fit(trainX, trainY, adaptiveLearning=True, learningRate = 0.000002, convergenceThreshold=0.01)
 
 testX = x[trainLimit:]
 testY = y[trainLimit:]
@@ -193,7 +215,7 @@ for i in range(0, len(testX)):
 	else:
 		error = (error+predictionError)/2.0
 	outputFile.write(str(predictionError) + "\n")
-	print("\033[1A\rError: {0:.6f}".format(error))
+	print("\033[1A\rError: {0:.6f}          ".format(error))
 print("Finished testing")
 	
 outputFile.close()
