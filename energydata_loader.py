@@ -1,3 +1,7 @@
+import csv
+import numpy
+from random import shuffle
+
 #ignorar primeira linha (descricoes)
 #ignorar primeira coluna (datas)
 #ignorar segunda coluna (valor a ser estimado)

@@ -1,11 +1,10 @@
 from sklearn.base import BaseEstimator
 import math
-import csv
 import numpy
 import sys
 import warnings
 import threading
-from random import shuffle
+import random
 import energydata_loader
 
 
@@ -73,7 +72,8 @@ class LMSTrainer(BaseEstimator):
 			# TODO: FAZER POR MATRIZES
 			pass
 		else:
-			self.theta = [1.0 for i in range(0, len(x[0])+1)]	#first theta does not have associated x value
+			random.seed()
+			self.theta = [random.uniform(-10.0, 10.0) for i in range(0, len(x[0])+1)]	#first theta does not have associated x value
 			
 			relativeCost = float("inf")
 			previousCost = float("inf")
