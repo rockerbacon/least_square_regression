@@ -5,7 +5,8 @@ import numpy
 import sys
 import warnings
 import threading
-from copy import copy
+from random import shuffle
+
 
 trainPercentage = 0.7
 
@@ -58,20 +59,22 @@ class CostRunner (threading.Thread):
 def openCsv (readFrom="energydata_complete.csv"):
 		print("Reading dataset...\n0%")	#debug
 		dataset = list(csv.reader(open(readFrom, "r"), delimiter=","))
+		dataset = dataset[1:]
+		shuffle(dataset)
 		rows = len(dataset)
 		colums = len(dataset[0])
 		
 		#extract correct values (y) from dataset
 		y = []
-		for i in range(1, rows):
+		for i in range(0, rows):
 			y.append(float(dataset[i][1]))
 			progress = 100.0*i/(rows*(colums-3))	#debug
 			print("\033[1A\r{0:.1f}%".format(progress) )	#debug
 		
 		#extract other values from dataset
-		x = numpy.array([[0.0 for j in range(0, colums-4)] for i in range(0, rows-1)])
+		x = numpy.array([[0.0 for j in range(0, colums-4)] for i in range(0, rows)])
 		i0 = 0
-		for i1 in range(1, rows):
+		for i1 in range(0, rows):
 			j0 = 0
 			for j1 in range(2, colums-2):
 				x[i0][j0] = float(dataset[i1][j1])
@@ -201,7 +204,7 @@ else:
 trainX = x[:trainLimit]
 trainY = y[:trainLimit]
 #print (trainY)	#debug
-trainer.fit(trainX, trainY, adaptiveLearning=True, learningRate = 0.000002, convergenceThreshold=0.01)
+trainer.fit(trainX, trainY, adaptiveLearning=True, learningRate = 0.000002, convergenceThreshold=0.001)
 
 testX = x[trainLimit:]
 testY = y[trainLimit:]
