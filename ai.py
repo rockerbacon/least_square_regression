@@ -6,6 +6,7 @@ import warnings
 import threading
 import random
 import energydata_loader
+import functiondata_loader
 
 
 trainPercentage = 0.7
@@ -16,26 +17,29 @@ trainPercentage = 0.7
 
 #function theta[0] + theta[1]*x[0] + theta[2]*x[1] + ... + theta[n+1]*x[n]
 def h (x, theta):
-	result = theta[0]
-	for j in range (0, len(x)):
-		result = result + x[j]*theta[j+1]
+	#result = theta[0]
+	result = theta[0] + sum ( [ x[j]*theta[j+1] for j in range(len(x)) ] )
+	#for j in range (0, len(x)):
+	#	result = result + x[j]*theta[j+1]
 	return result
 
 #derivative of the euclidean distance
 def defaultCost (j, x, theta, y):
-	cost = 0
+	#cost = 0
 	if j != 0:
-		for i in range(0, len(x)):
-			with warnings.catch_warnings():
-				warnings.filterwarnings('error')
-				try:
-					cost = cost + (h(x[i], theta) - y[i])*x[i][j-1]
-				except Warning:
-					print ("Theta values are too large and seem to be diverging")
-					pass
+		cost = sum( [ (h(x[i], theta) - y[i])*x[i][j-1] for i in range(len(x)) ] )
+		#for i in range(0, len(x)):
+		#	with warnings.catch_warnings():
+		#		warnings.filterwarnings('error')
+		#		try:
+		#			cost = cost + (y[i] - h(x[i], theta))*x[i][j-1]
+		#		except Warning:
+		#			print ("Theta values are too large and seem to be diverging")
+		#			pass
 	else:
-		for i in range(0, len(x)):
-			cost = cost + (h(x[i], theta) - y[i])
+		cost = sum( [ (h(x[i], theta) - y[i]) for i in range(len(x)) ] )
+		#for i in range(0, len(x)):
+		#	cost = cost + (h(x[i], theta) - y[i])
 			
 	return cost/len(x)
 	
@@ -58,7 +62,7 @@ class LMSTrainer(BaseEstimator):
 		self.analitic = analitic
 		self.theta = None
  		
-	def fit(self, x, y, learningRate=0.000002, adaptiveLearning=False, learningAdaptionRate=0.1, adaptionThreshold=0.3, costFunc=defaultCost, convergenceThreshold=None, relativeThreshold=None):
+	def fit(self, x, y, learningRate=0.000002, adaptiveLearning=False, learningAdaptionRate=0.1, costAdaptionStabilization = 0.0001, costFunc=defaultCost, convergenceThreshold=None, relativeThreshold=None, epochs=1):
 	
 		if relativeThreshold is None and convergenceThreshold is None:
 			raise RuntimeError("Need to specify stop criteria")
@@ -78,68 +82,71 @@ class LMSTrainer(BaseEstimator):
 			relativeCost = float("inf")
 			previousCost = float("inf")
 			convergenceRate = float("inf")
-			adaptionBias = 1.0+learningAdaptionRate
-			climbing = True
+			increasingRate = 1.0+learningAdaptionRate
+			decreasingRate = 1.0-learningAdaptionRate
+			it = 1
 			while relativeThreshold is None and abs(100.0*convergenceRate) > convergenceThreshold or convergenceThreshold is None and relativeCost > relativeThreshold:
-				evaluation = 0.0
+			
+				for ep in range(epochs):
+					evaluation = 0.0
 				
-				#prepare threads
-				threads = []
-				for j in range(0, len(self.theta)):
-					threads.append(CostRunner(j, x, self.theta, y))
+					#prepare threads
+					threads = []
+					for j in range(0, len(self.theta)):
+						threads.append(CostRunner(j, x, self.theta, y))
 				
-				#start threads
-				for t in threads:
-					t.start()
+					#start threads
+					for t in threads:
+						t.start()
 				
-				#wait for threads to finish and evaluate the results
-				evaluation = 0.0
-				for t in threads:
-					t.join()
-					evaluation = evaluation + t.cost
-				evaluation = evaluation/len(self.theta)	
+					#wait for threads to finish and evaluate the results
+					evaluation = 0.0
+					for t in threads:
+						t.join()
+						evaluation = evaluation + t.cost
+					evaluation = evaluation/len(self.theta)	
 					
-				if previousCost == float("inf"):
-					relativeCost = abs(evaluation)
-					previousCost = relativeCost
-					lastConvergenceRate = 0.0
-				else:
-					if convergenceRate != float("inf"):
-						lastConvergenceRate = convergenceRate
-					convergenceRate = abs(previousCost)/abs(evaluation) - 1
-					relativeCost = abs(evaluation - previousCost)
-					previousCost = evaluation
-				
-				#debug	
-				print ("\033[4A\rRelative error:", relativeCost, "                   ")
-				print ("Absolute error:", evaluation, "                ")
-				print ("Convergence rate: {0:.2f}%   ".format(100.0*convergenceRate))
-				print ("Learning bias:", learningRate, "                    ")
-				
-				#try to optimize learning bias	
-				if adaptiveLearning:
-				
-					if climbing:
-						#attemp to find the highest possible value for the learning rate
-						if convergenceRate - lastConvergenceRate < 0.0:
-							climbing = False
-							adaptionBias = 2.0 - adaptionBias
-							learningRate = learningRate*adaptionBias
-							
-						learningRate = learningRate*adaptionBias
-						adaptionBias = adaptionBias**2.0 - 2.0*adaptionBias + 2.0	#reduce climbing speed the more you climb
+					if previousCost == float("inf"):
+						relativeCost = abs(evaluation)
+						previousCost = relativeCost
+						lastConvergenceRate = 0.0
 					else:
-						#after climbing begin to reduce learning value to better approximate the result
-						if abs(convergenceRate - lastConvergenceRate) > adaptionThreshold or convergenceRate < 0.0:
-							learningRate = learningRate*adaptionBias
+						if convergenceRate != float("inf"):
+							lastConvergenceRate = convergenceRate
+						convergenceRate = abs(previousCost)/abs(evaluation) - 1
+						relativeCost = abs(evaluation - previousCost)
+						previousCost = evaluation
+				
+					#debug	
+					print ("\033[4A\rRelative error:", relativeCost, "                   ")
+					print ("Absolute error:", evaluation, "                ")
+					print ("Convergence rate: {0:.2f}%   ".format(100.0*convergenceRate))
+					print ("Learning bias:", learningRate, "                    ")
+				
+					#try to optimize learning bias
+					if adaptiveLearning and it%(round(1.0/learningAdaptionRate)) == 0:
+				
+						if convergenceRate > 0.0:
+							#attempt to find the highest possible value for the learning rate
+							learningRate = learningRate*increasingRate
+							increasingRate = (2.0-learningAdaptionRate)*(increasingRate**2.0 - 2.0*increasingRate + 2.0) - (1.0-learningAdaptionRate)	#reduce climbing speed the more you climb
+							#increasingRate = increasingRate*math.exp(-increasingRate/relativeCost)
+						
+						else:		
+							#after climbing begin to reduce learning value to better approximate the result
+							learningRate = learningRate*decreasingRate
 						
 							#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
-							adaptionBias = adaptionBias*math.exp(-abs(convergenceRate)*(1.0-2.0*learningAdaptionRate))
-							#adaptionBias = (1.0-learningAdaptionRate)*adaptionBias
+							decreasingRate = learningAdaptionRate*(-decreasingRate**2.0 + 2.0*decreasingRate) + (1.0 - learningAdaptionRate) #reduce decline speed the more you decline
+							#decreasingRate = decreasingRate*math.exp(-decreasingRate/relativeCost)
+							#if adaptionBias == 1.0:
+							#	adaptionBias = 1.0 - learningAdaptionRate
 	
-				#update theta values
-				for t in threads:
-					self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
+					#update theta values
+					for t in threads:
+						self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
+						
+				it = it+1
 				
 
 			
@@ -159,7 +166,9 @@ class LMSTrainer(BaseEstimator):
 			
 		return prediction
 
-x, y = energydata_loader.openCsv()
+#load dataset
+#x, y = energydata_loader.openCsv()
+x, y = functiondata_loader.random_generate(10000, lowerRange=-500.0, upperRange=500.0)
 trainLimit = math.floor(trainPercentage*len(x))
 
 trainer = LMSTrainer()
@@ -171,7 +180,7 @@ else:
 trainX = x[:trainLimit]
 trainY = y[:trainLimit]
 #print (trainY)	#debug
-trainer.fit(trainX, trainY, adaptiveLearning=True, learningRate = 0.000002, convergenceThreshold=0.001)
+trainer.fit(trainX, trainY, adaptiveLearning=True, relativeThreshold=0.0000001)
 
 testX = x[trainLimit:]
 testY = y[trainLimit:]
