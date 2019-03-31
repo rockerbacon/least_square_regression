@@ -1,5 +1,6 @@
 from ai import LMSTrainer
-from input import EnergyDataReader, RandomDataGenerator, DatasetStatusObserver
+from input import EnergyDataReader, RandomDataGenerator
+from output import DatasetReadingObserver
 import sys
 import math
 
@@ -10,7 +11,9 @@ else:
 
 #reader = EnergyDataReader()
 reader = RandomDataGenerator(lambda theta0: theta0**2 + theta0*3 - 2, 1, 20, -20, 20)
-reader.attach(DatasetStatusObserver(sys.stdout))
+
+dataset_reading_observer = DatasetReadingObserver(sys.stdout)
+reader.attach(dataset_reading_observer)
 
 y, x = reader.read()
 
