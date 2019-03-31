@@ -5,8 +5,6 @@ import sys
 import warnings
 import threading
 import random
-import energydata_loader
-import functiondata_loader
 
 
 trainPercentage = 0.7
@@ -40,9 +38,9 @@ def defaultCost (j, x, theta, y):
 		cost = sum( [ (h(x[i], theta) - y[i]) for i in range(len(x)) ] )
 		#for i in range(0, len(x)):
 		#	cost = cost + (h(x[i], theta) - y[i])
-			
+
 	return cost/len(x)
-	
+
 class CostRunner (threading.Thread):
 	def __init__ (self, j, x, theta, y, costFunc=defaultCost):
 		threading.Thread.__init__(self)
@@ -52,23 +50,23 @@ class CostRunner (threading.Thread):
 		self.y = y
 		self.costFunc = costFunc
 		self.cost = float('inf')
-	
+
 	def run (self):
 		self.cost = self.costFunc(self.j, self.x, self.theta, self.y)
 
 class LMSTrainer(BaseEstimator):
 	def __init__(self, analitic=False):
-	
+
 		self.analitic = analitic
 		self.theta = None
- 		
+
 	def fit(self, x, y, learningRate=0.000002, adaptiveLearning=False, learningAdaptionRate=0.1, costAdaptionStabilization = 0.0001, costFunc=defaultCost, convergenceThreshold=None, relativeThreshold=None, epochs=1):
-	
+
 		if relativeThreshold is None and convergenceThreshold is None:
 			raise RuntimeError("Need to specify stop criteria")
 		elif not (relativeThreshold is None or convergenceThreshold is None):
 			raise RuntimeError("Can only use one stop criteria")
-			
+
 		print ("Training...")	#debug
 		print ("Relative error: 0.0\nAbsolute error: 0.0\nConvergence rate: 0.0%")	#debug
 		print ("Learning bias:", learningRate)	#debug
@@ -78,7 +76,7 @@ class LMSTrainer(BaseEstimator):
 		else:
 			random.seed()
 			self.theta = [random.uniform(-10.0, 10.0) for i in range(0, len(x[0])+1)]	#first theta does not have associated x value
-			
+
 			relativeCost = float("inf")
 			previousCost = float("inf")
 			convergenceRate = float("inf")
@@ -86,26 +84,26 @@ class LMSTrainer(BaseEstimator):
 			decreasingRate = 1.0-learningAdaptionRate
 			it = 1
 			while relativeThreshold is None and abs(100.0*convergenceRate) > convergenceThreshold or convergenceThreshold is None and relativeCost > relativeThreshold:
-			
+
 				for ep in range(epochs):
 					evaluation = 0.0
-				
+
 					#prepare threads
 					threads = []
 					for j in range(0, len(self.theta)):
 						threads.append(CostRunner(j, x, self.theta, y))
-				
+
 					#start threads
 					for t in threads:
 						t.start()
-				
+
 					#wait for threads to finish and evaluate the results
 					evaluation = 0.0
 					for t in threads:
 						t.join()
 						evaluation = evaluation + t.cost
-					evaluation = evaluation/len(self.theta)	
-					
+					evaluation = evaluation/len(self.theta)
+
 					if previousCost == float("inf"):
 						relativeCost = abs(evaluation)
 						previousCost = relativeCost
@@ -116,86 +114,53 @@ class LMSTrainer(BaseEstimator):
 						convergenceRate = abs(previousCost)/abs(evaluation) - 1
 						relativeCost = abs(evaluation - previousCost)
 						previousCost = evaluation
-				
-					#debug	
+
+					#debug
 					print ("\033[4A\rRelative error:", relativeCost, "                   ")
 					print ("Absolute error:", evaluation, "                ")
 					print ("Convergence rate: {0:.2f}%   ".format(100.0*convergenceRate))
 					print ("Learning bias:", learningRate, "                    ")
-				
+
 					#try to optimize learning bias
 					if adaptiveLearning and it%(round(1.0/learningAdaptionRate)) == 0:
-				
+
 						if convergenceRate > 0.0:
 							#attempt to find the highest possible value for the learning rate
 							learningRate = learningRate*increasingRate
 							increasingRate = (2.0-learningAdaptionRate)*(increasingRate**2.0 - 2.0*increasingRate + 2.0) - (1.0-learningAdaptionRate)	#reduce climbing speed the more you climb
 							#increasingRate = increasingRate*math.exp(-increasingRate/relativeCost)
-						
-						else:		
+
+						else:
 							#after climbing begin to reduce learning value to better approximate the result
 							learningRate = learningRate*decreasingRate
-						
+
 							#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
 							decreasingRate = learningAdaptionRate*(-decreasingRate**2.0 + 2.0*decreasingRate) + (1.0 - learningAdaptionRate) #reduce decline speed the more you decline
 							#decreasingRate = decreasingRate*math.exp(-decreasingRate/relativeCost)
 							#if adaptionBias == 1.0:
 							#	adaptionBias = 1.0 - learningAdaptionRate
-	
+
 					#update theta values
 					for t in threads:
 						self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
-						
-				it = it+1
-				
 
-			
+				it = it+1
+
+
+
 			# TODO: FAZERPELO GRADIENTE DESCENDETE
 		print ("Training complete")	#debug
-		
+
 		return self
-		
+
 	def predict(self, x, y=None):
-	
+
 		if self.theta is None:
 			raise RuntimeError("You must train classifer before predicting data!")
-			
+
 		prediction = self.theta[0]
 		for j in range(1, len(self.theta)):
 			prediction = prediction + self.theta[j]*x[j-1]
-			
+
 		return prediction
-
-#load dataset
-#x, y = energydata_loader.openCsv()
-x, y = functiondata_loader.random_generate(10000, lowerRange=-500.0, upperRange=500.0)
-trainLimit = math.floor(trainPercentage*len(x))
-
-trainer = LMSTrainer()
-if len(sys.argv) == 1:
-	outputFile = open("test_results.txt", "w")
-else:
-	outputFile = open(sys.argv[1], "w")
-
-trainX = x[:trainLimit]
-trainY = y[:trainLimit]
-#print (trainY)	#debug
-trainer.fit(trainX, trainY, adaptiveLearning=True, relativeThreshold=0.0000001)
-
-testX = x[trainLimit:]
-testY = y[trainLimit:]
-print("Testing...")
-print("Error: 0.0")
-error = None
-for i in range(0, len(testX)):
-	predictionError = abs(trainer.predict(testX[i])-testY[i])
-	if error is None:
-		error = predictionError
-	else:
-		error = (error+predictionError)/2.0
-	outputFile.write(str(predictionError) + "\n")
-	print("\033[1A\rError: {0:.6f}          ".format(error))
-print("Finished testing")
-	
-outputFile.close()
 
