@@ -1,22 +1,56 @@
 from os import cpu_count
+from threading import Thread, Lock, Condition
+from exceptions import AbstractMethodCallError
 
-def execute_threads(thread_queue, join_function):
-	processors_available = cpu_count()
-	processors_needed = processors_available if len(thread_queue) > processors_available else len(thread_queue)
+class ManagedFunction (Thread):
+	def __init__(self, function, args, manager):
+		Thread.__init__(self)
+		self.__function = function
+		self.__args = args
+		self.__manager = manager
 
-	threads_running = []
-	for i in range(processors_needed):
-		thread = thread_queue.pop(0)
-		thread.start()
-		threads_running.append(thread)
+	def run(self):
+		return_value = self.__function(*self.__args)
+		self.__manager.notify_return(return_value)
 
-	while len(threads_running) > 0:
-		current_thread = threads_running.pop(0)
+	def get_return (self):
+		return self.__return
 
-		current_thread.join()
-		join_function(current_thread)
+class ThreadManager ():
+	def __init__(self, cpu_cores=None):
+		self.__cpu_cores = cpu_count() if cpu_cores is None else cpu_cores
 
-		if len(thread_queue) > 0:
-			thread = thread_queue.pop(0)
+		self.__functions = []
+		self.__function_queue = []
+		self.__function_queue_lock = Lock()
+
+		self.__all_threads_finished_condition = Condition()
+
+		self.__returned_values = []
+
+	def attach(self, function, args):
+		self.__functions.append({"function": function, "args": args})
+
+	def notify_return(self, return_value):
+
+		with self.__function_queue_lock:
+			self.__returned_values.append(return_value)
+
+			if len(self.__function_queue) > 0:
+				thread = self.__function_queue.pop(0)
+				thread.start()
+			elif len(self.__returned_values) == len(self.__functions):
+				with self.__all_threads_finished_condition:
+					self.__all_threads_finished_condition.notify()
+
+	def execute_all (self):
+		self.__function_queue = [ManagedFunction(f["function"], f["args"], self) for f in self.__functions]
+		threads = self.__function_queue.copy()
+		for i in range(self.__cpu_cores):
+			thread = self.__function_queue.pop(0)
 			thread.start()
-			threads_running.append(thread)
+
+		with self.__all_threads_finished_condition:
+			self.__all_threads_finished_condition.wait()
+
+		return self.__returned_values

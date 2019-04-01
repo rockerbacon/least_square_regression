@@ -1,4 +1,4 @@
-from ai import LMSTrainerBuilder, absolute_error_stop_function
+from ai import LMSTrainerBuilder, absolute_error_stop_function, minibatch_error_evaluation_function, batch_error_evaluation_function
 from input import EnergyDataReader, RandomDataGenerator
 from output import DatasetReaderObserver, TrainerObserver
 import sys
@@ -9,13 +9,16 @@ if len(sys.argv) == 1:
 else:
 	output_file_path = sys.argv[1]
 
-#reader = EnergyDataReader()
-reader = RandomDataGenerator(lambda x: x*5 - 2, 1, 20, -20, 20)
+input_file = open("energydata_complete.csv", "r")
+reader = EnergyDataReader(input_file)
+#reader = RandomDataGenerator(lambda x0, x1, x2: x0*2 + x1*5 + x2*3 - 2, 3, 200, -20, 20)
 
 dataset_reader_observer = DatasetReaderObserver(sys.stdout)
 reader.attach(dataset_reader_observer)
 
 y, x = reader.read()
+
+input_file.close()
 
 train_percentage = 0.7
 dataset_slice_point = math.floor(train_percentage*len(x))
@@ -25,7 +28,13 @@ testingset_x = x[dataset_slice_point:]
 testingset_y = y[dataset_slice_point:]
 
 trainer_builder = LMSTrainerBuilder().with_defaults(trainingset_y, trainingset_x)
-trainer_builder.with_stop_function(absolute_error_stop_function)
+
+trainer_builder.with_error_evaluation_function(lambda y, x, theta, prediction_function: minibatch_error_evaluation_function(y, x, theta, prediction_function, 0.05))
+trainer_builder.with_learning_bias(0.00000000007)
+trainer_builder.with_initial_theta_values([0 for i in range(len(x[0])+1)])
+
+# trainer_builder.with_error_evaluation_function(batch_error_evaluation_function)
+# trainer_builder.with_learning_bias(0.000085)
 
 trainer = trainer_builder.build()
 

@@ -1,12 +1,9 @@
 from sklearn.base import BaseEstimator
 import math
 import numpy
-import sys
-import warnings
-import threading
 import random
 from output import Observable
-import thread_manager
+from thread_manager import ThreadManager
 
 #function theta[0] + theta[1]*x[0] + theta[2]*x[1] + ... + theta[n+1]*x[n]
 def linear_function (x, theta):
@@ -18,12 +15,20 @@ def polinomial_function (x, theta):
 	result = theta[0] + sum ([ theta[n+1]*x[n]**(n+1) for n in range(len(x)) ])
 	return result
 
-def minibatch_error_evaluation_function (y, x, theta, prediction_function):
-	error = 0
-	setsize = math.floor(len(y)*0.3)
+def evaluate_error(y, x, theta, prediction_function):
+	return abs(prediction_function(x, theta) - y)
+
+def minibatch_error_evaluation_function (y, x, theta, prediction_function, percentage_to_evaluate=0.3):
+
+	setsize = math.floor(len(y)*percentage_to_evaluate)
+
+	thread_manager = ThreadManager(1)
 	for i in range (setsize):
-		error += abs(y[i] - prediction_function(x[i], theta))
-	error /= setsize
+		thread_manager.attach(evaluate_error, (y[i], x[i], theta, prediction_function))
+
+	errors = thread_manager.execute_all()
+
+	error = sum(errors)/setsize
 
 	return error
 
@@ -35,33 +40,19 @@ def batch_error_evaluation_function (y, x, theta, prediction_function):
 
 	return error
 
-def relative_error_stop_function (trainer):
-	return trainer.get_relative_error() < 0.0001
+def relative_error_stop_function (trainer, threshold=0.0001):
+	return trainer.get_relative_error() < threshold
 
-def absolute_error_stop_function (trainer):
-	return trainer.get_absolute_error() < 0.0001
+def absolute_error_stop_function (trainer, threshold=0.0001):
+	return trainer.get_absolute_error() < threshold
 
-class DerivedCostEvaluator (threading.Thread):
-	def __init__ (self, theta_index, y, x, theta, prediction_function):
-		threading.Thread.__init__(self)
-		self.__theta_index = theta_index
-		self.__y = y
-		self.__x = x
-		self.__theta = theta
-		self.__predict = prediction_function
+def derived_cost(theta_index, y, x, theta, prediction_function):
+	if theta_index > 0:
+		derived_cost = sum( [ (prediction_function(x[i], theta) - y[i])*x[i][theta_index-1] for i in range(len(x)) ] )
+	else:
+		derived_cost = sum( [ (prediction_function(x[i], theta) - y[i]) for i in range(len(x)) ] )
 
-	#derivative of the euclidean distance
-	def run (self):
-		if self.__theta_index > 0:
-			self.__derived_cost = sum( [ (self.__predict(self.__x[i], self.__theta) - self.__y[i])*self.__x[i][self.__theta_index-1] for i in range(len(self.__x)) ] )
-		else:
-			self.__derived_cost = sum( [ (self.__predict(self.__x[i], self.__theta) - self.__y[i]) for i in range(len(self.__x)) ] )
-
-	def get_derived_cost(self):
-		return self.__derived_cost
-
-	def get_theta_index(self):
-		return self.__theta_index
+	return {"theta_index": theta_index, "derived_cost": derived_cost}
 
 class LMSTrainer(BaseEstimator, Observable):
 	def __init__(self):
@@ -89,7 +80,6 @@ class LMSTrainer(BaseEstimator, Observable):
 
 	def set_initial_theta_values (self, theta):
 		self.__theta = theta
-		self.__theta_derived_cost = numpy.array([float("inf") for i in range(len(self.__theta))])
 
 	def set_learning_bias (self, rate):
 		self.__learning_bias = rate
@@ -135,18 +125,13 @@ class LMSTrainer(BaseEstimator, Observable):
 			#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
 			decreasingRate = learningAdaptionRate*(-decreasingRate**2.0 + 2.0*decreasingRate) + (1.0 - learningAdaptionRate) #reduce decline speed the more you decline
 
-
-	def __join_thread (self, thread):
-		self.__theta_derived_cost[thread.get_theta_index()] = thread.get_derived_cost()
-
 	def __evaluate_derived_cost(self):
 
-		thread_queue = []
+		thread_manager = ThreadManager(1)
 		for theta_index in range(len(self.__theta)):
-			thread = DerivedCostEvaluator(theta_index, self.__y, self.__x, self.__theta, self.__predict)
-			thread_queue.append(thread)
+			thread_manager.attach(derived_cost, (theta_index, self.__y, self.__x, self.__theta, self.__predict))
 
-		thread_manager.execute_threads(thread_queue, self.__join_thread)
+		return thread_manager.execute_all()
 
 	def fit(self):
 
@@ -162,20 +147,21 @@ class LMSTrainer(BaseEstimator, Observable):
 
 				for ep in range(self.__epochs):
 
-					self.__evaluate_derived_cost()
+					costs = self.__evaluate_derived_cost()
 
 					previous_error = self.__absolute_error
 					self.__absolute_error = self.__evaluate_error(self.__y, self.__x, self.__theta, self.__predict)
-					self.__relative_error = previous_error - self.__absolute_error
+					self.__relative_error = abs(previous_error - self.__absolute_error)
+					self.__convergence_rate = 1 - self.__absolute_error/previous_error
 
 					if self.__adaptive_learning:
 						self.__adjust_learning()
 
 					#update theta values
-					for i in range(len(self.__theta_derived_cost)):
-						self.__theta[i] -= self.__learning_bias*self.__theta_derived_cost[i]
+					for cost in costs:
+						self.__theta[cost["theta_index"]] -= self.__learning_bias*cost["derived_cost"]
 
-				self.notify_observers()
+					self.notify_observers()
 
 		self.__trained = True
 		self.notify_observers()
@@ -227,7 +213,7 @@ class LMSTrainerBuilder ():
 		self.__trainer.set_trainingset(trainingset_y, trainingset_x)
 		return self
 
-	def with_initial_theta_value(self, theta):
+	def with_initial_theta_values(self, theta):
 		self.__trainer.set_initial_theta_values(theta)
 		return self
 
