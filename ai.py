@@ -5,162 +5,232 @@ import sys
 import warnings
 import threading
 import random
-
-
-trainPercentage = 0.7
-
-#	Program call:
-#		python3 ai.py <optional output file>
-#	The program will write out the error of the tests to the output file specified or to a default file in case no output is specified
+from output import Observable
 
 #function theta[0] + theta[1]*x[0] + theta[2]*x[1] + ... + theta[n+1]*x[n]
-def h (x, theta):
-	#result = theta[0]
-	result = theta[0] + sum ( [ x[j]*theta[j+1] for j in range(len(x)) ] )
-	#for j in range (0, len(x)):
-	#	result = result + x[j]*theta[j+1]
+def linear_function (x, theta):
+	result = theta[0] + sum ( [ theta[n+1]*x[n] for n in range(len(x)) ] )
+	return result
+
+#function theta[0] + theta[1]*x[0]^1 + theta[2]*x[1]^2 + ... + theta[n+1]*x[n]^(n+1)
+def polinomial_function (x, theta):
+	result = theta[0] + sum ([ theta[n+1]*x[n]**(n+1) for n in range(len(x)) ])
 	return result
 
 #derivative of the euclidean distance
-def defaultCost (j, x, theta, y):
-	#cost = 0
-	if j != 0:
-		cost = sum( [ (h(x[i], theta) - y[i])*x[i][j-1] for i in range(len(x)) ] )
-		#for i in range(0, len(x)):
-		#	with warnings.catch_warnings():
-		#		warnings.filterwarnings('error')
-		#		try:
-		#			cost = cost + (y[i] - h(x[i], theta))*x[i][j-1]
-		#		except Warning:
-		#			print ("Theta values are too large and seem to be diverging")
-		#			pass
+#TODO verify this function
+def default_error_function (theta_index, y, x, theta, approximation_function):
+
+	if theta_index != 0:
+		error = sum( [ (approximation_function(x[i], theta) - y[i])*x[i][theta_index-1] for i in range(len(x)) ] )
 	else:
-		cost = sum( [ (h(x[i], theta) - y[i]) for i in range(len(x)) ] )
-		#for i in range(0, len(x)):
-		#	cost = cost + (h(x[i], theta) - y[i])
+		error = sum( [ (approximation_function(x[i], theta) - y[i]) for i in range(len(x)) ] )
 
-	return cost/len(x)
+	return error/len(theta)
 
-class CostRunner (threading.Thread):
-	def __init__ (self, j, x, theta, y, costFunc=defaultCost):
+def relative_error_stop_function (trainer):
+	return trainer.get_relative_error() < 0.0001
+
+def absolute_error_stop_function (trainer):
+	return trainer.get_absolute_error() < 0.0001
+
+class ErrorEvaluator (threading.Thread):
+	def __init__ (self, theta_index, x, theta, y, error_function, approximation_function):
 		threading.Thread.__init__(self)
-		self.j = j
-		self.x = x
-		self.theta = theta
-		self.y = y
-		self.costFunc = costFunc
-		self.cost = float('inf')
+		self.__theta_index = theta_index
+		self.__x = x
+		self.__theta = theta
+		self.__y = y
+		self.__error_function = error_function
+		self.__error = float('inf')
+		self.__approximation_function = approximation_function
 
 	def run (self):
-		self.cost = self.costFunc(self.j, self.x, self.theta, self.y)
+		self.__error = self.__error_function(self.__theta_index, self.__y, self.__x, self.__theta, self.__approximation_function)
 
-class LMSTrainer(BaseEstimator):
-	def __init__(self, analitic=False):
+	def get_error(self):
+		return self.__error
 
-		self.analitic = analitic
-		self.theta = None
+class LMSTrainer(BaseEstimator, Observable):
+	def __init__(self):
+		super().__init__()
 
-	def fit(self, x, y, learningRate=0.000002, adaptiveLearning=False, learningAdaptionRate=0.1, costAdaptionStabilization = 0.0001, costFunc=defaultCost, convergenceThreshold=None, relativeThreshold=None, epochs=1):
+		self.__absolute_error = float("inf")
+		self.__relative_error = float("inf")
+		self.__convergence_rate = 0
 
-		if relativeThreshold is None and convergenceThreshold is None:
-			raise RuntimeError("Need to specify stop criteria")
-		elif not (relativeThreshold is None or convergenceThreshold is None):
-			raise RuntimeError("Can only use one stop criteria")
+		self.__trained = False
 
-		print ("Training...")	#debug
-		print ("Relative error: 0.0\nAbsolute error: 0.0\nConvergence rate: 0.0%")	#debug
-		print ("Learning bias:", learningRate)	#debug
-		if self.analitic:
+	def set_approximation_function (self, function):
+		self.__h = function
+
+	def set_error_function (self, function):
+		self.__error = function
+
+	def set_stop_function (self, function):
+		self.__stop = function
+
+	def set_trainingset (self, trainingset_y, trainingset_x):
+		self.__y = trainingset_y
+		self.__x = trainingset_x
+
+	def set_initial_theta_values (self, theta):
+		self.__theta = theta
+		self.__theta_error = numpy.array([float("inf") for i in range(len(self.__theta))])
+
+	def set_learning_bias (self, rate):
+		self.__learning_bias = rate
+
+	def set_adaptive_learning (self, use_adaptive_learning):
+		self.__adaptive_learning = use_adaptive_learning
+
+	def set_epochs (self, number_of_epochs):
+		self.__epochs = number_of_epochs
+
+	def set_analitic (self, analitic):
+		self.__analitic = analitic
+
+	def get_absolute_error (self):
+		return self.__absolute_error
+
+	def get_relative_error (self):
+		return self.__relative_error
+
+	def get_convergence_rate (self):
+		return self.__convergence_rate
+
+	def get_learning_bias (self):
+		return self.__learning_bias
+
+	def is_trained (self):
+		return self.__trained
+
+	def __evaluate_error (self):
+		previous_error = self.__absolute_error
+
+
+		threads = [ErrorEvaluator(theta_index, self.__x, self.__theta, self.__y, self.__error, self.__h) for theta_index in range(len(self.__theta))]
+		for t in threads:
+			t.start()
+
+		self.__absolute_error = 0.0
+		for i in range(len(threads)):
+			threads[i].join()
+			self.__theta_error[i] = threads[i].get_error()
+			self.__absolute_error += threads[i].get_error()
+		self.__absolute_error /= len(self.__theta)
+
+		self.__convergence_rate = 1 - self.__absolute_error/previous_error
+		self.__relative_error = abs(previous_error - self.__absolute_error)
+
+	#TODO verify function
+	def __adjust_learning (self):
+		if self.__convergence_rate > 0.0:
+			#attempt to find the highest possible value for the learning rate
+			self.__learning_bias = self.__learning_bias*increasingRate
+			increasingRate = (2.0-learningAdaptionRate)*(increasingRate**2.0 - 2.0*increasingRate + 2.0) - (1.0-learningAdaptionRate)	#reduce climbing speed the more you climb
+
+		else:
+			#after climbing begin to reduce learning value to better approximate the result
+			learningRate = learningRate*decreasingRate
+
+			#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
+			decreasingRate = learningAdaptionRate*(-decreasingRate**2.0 + 2.0*decreasingRate) + (1.0 - learningAdaptionRate) #reduce decline speed the more you decline
+
+
+	def fit(self):
+
+		self.notify_observers()
+
+		if self.__analitic:
 			# TODO: FAZER POR MATRIZES
 			pass
 		else:
-			random.seed()
-			self.theta = [random.uniform(-10.0, 10.0) for i in range(0, len(x[0])+1)]	#first theta does not have associated x value
 
-			relativeCost = float("inf")
-			previousCost = float("inf")
-			convergenceRate = float("inf")
-			increasingRate = 1.0+learningAdaptionRate
-			decreasingRate = 1.0-learningAdaptionRate
-			it = 1
-			while relativeThreshold is None and abs(100.0*convergenceRate) > convergenceThreshold or convergenceThreshold is None and relativeCost > relativeThreshold:
+			self.__current_iteration = 0
+			while not self.__stop(self):
+				self.__current_iteration += 1
 
-				for ep in range(epochs):
-					evaluation = 0.0
+				for ep in range(self.__epochs):
 
-					#prepare threads
-					threads = []
-					for j in range(0, len(self.theta)):
-						threads.append(CostRunner(j, x, self.theta, y))
+					self.__evaluate_error()
 
-					#start threads
-					for t in threads:
-						t.start()
-
-					#wait for threads to finish and evaluate the results
-					evaluation = 0.0
-					for t in threads:
-						t.join()
-						evaluation = evaluation + t.cost
-					evaluation = evaluation/len(self.theta)
-
-					if previousCost == float("inf"):
-						relativeCost = abs(evaluation)
-						previousCost = relativeCost
-						lastConvergenceRate = 0.0
-					else:
-						if convergenceRate != float("inf"):
-							lastConvergenceRate = convergenceRate
-						convergenceRate = abs(previousCost)/abs(evaluation) - 1
-						relativeCost = abs(evaluation - previousCost)
-						previousCost = evaluation
-
-					#debug
-					print ("\033[4A\rRelative error:", relativeCost, "                   ")
-					print ("Absolute error:", evaluation, "                ")
-					print ("Convergence rate: {0:.2f}%   ".format(100.0*convergenceRate))
-					print ("Learning bias:", learningRate, "                    ")
-
-					#try to optimize learning bias
-					if adaptiveLearning and it%(round(1.0/learningAdaptionRate)) == 0:
-
-						if convergenceRate > 0.0:
-							#attempt to find the highest possible value for the learning rate
-							learningRate = learningRate*increasingRate
-							increasingRate = (2.0-learningAdaptionRate)*(increasingRate**2.0 - 2.0*increasingRate + 2.0) - (1.0-learningAdaptionRate)	#reduce climbing speed the more you climb
-							#increasingRate = increasingRate*math.exp(-increasingRate/relativeCost)
-
-						else:
-							#after climbing begin to reduce learning value to better approximate the result
-							learningRate = learningRate*decreasingRate
-
-							#reduce learning rate according to convergence rate. The bigger the improvements the more likely the next improvements will come from small steps
-							decreasingRate = learningAdaptionRate*(-decreasingRate**2.0 + 2.0*decreasingRate) + (1.0 - learningAdaptionRate) #reduce decline speed the more you decline
-							#decreasingRate = decreasingRate*math.exp(-decreasingRate/relativeCost)
-							#if adaptionBias == 1.0:
-							#	adaptionBias = 1.0 - learningAdaptionRate
+					if self.__adaptive_learning:
+						self.__adjust_learning()
 
 					#update theta values
-					for t in threads:
-						self.theta[t.j] = self.theta[t.j] - learningRate*t.cost
+					for i in range(len(self.__theta_error)):
+						self.__theta[i] -= self.__learning_bias*self.__theta_error[i]
 
-				it = it+1
+				self.notify_observers()
 
-
-
-			# TODO: FAZERPELO GRADIENTE DESCENDETE
-		print ("Training complete")	#debug
+		self.__trained = True
+		self.notify_observers()
 
 		return self
 
 	def predict(self, x, y=None):
 
-		if self.theta is None:
-			raise RuntimeError("You must train classifer before predicting data!")
+		if not self.is_trained():
+			raise RuntimeError("Method fit() must be called before method predict")
 
-		prediction = self.theta[0]
-		for j in range(1, len(self.theta)):
-			prediction = prediction + self.theta[j]*x[j-1]
+		prediction = self.__h(x, self.__theta)
 
 		return prediction
+
+class LMSTrainerBuilder ():
+	def __init__(self):
+		self.__trainer = LMSTrainer()
+
+	def build (self):
+		return self.__trainer
+
+	def with_defaults (self, trainingset_y, trainingset_x):
+		random.seed()
+		self.__trainer.set_approximation_function(linear_function)
+		self.__trainer.set_error_function(default_error_function)
+		self.__trainer.set_stop_function(relative_error_stop_function)
+		self.__trainer.set_trainingset(trainingset_y, trainingset_x)
+		self.__trainer.set_initial_theta_values(numpy.array([random.uniform(-10, 10) for i in range(len(trainingset_x[0])+1)]))
+		self.__trainer.set_learning_bias(0.000002)
+		self.__trainer.set_adaptive_learning(False)
+		self.__trainer.set_epochs(1)
+		self.__trainer.set_analitic(False)
+		return self
+
+	def with_approximation_function(self, function):
+		self.__trainer.set_approximation_function(function)
+		return self
+
+	def with_error_function(self, function):
+		self.__trainer.set_error_function(function)
+		return self
+
+	def with_stop_function(self, function):
+		self.__trainer.set_stop_function(function)
+		return self
+
+	def with_trainingset(self, trainingset_y, trainingset_x):
+		self.__trainer.set_trainingset(trainingset_y, trainingset_x)
+		return self
+
+	def with_initial_theta_value(self, theta):
+		self.__trainer.set_initial_theta_values(theta)
+		return self
+
+	def with_learning_bias(self, bias):
+		self.__trainer.set_learning_bias(bias)
+		return self
+
+	def with_adaptive_learning(self, adaptive):
+		self.__trainer.set_adaptive_learning(adaptive)
+		return self
+
+	def with_epochs(self, epochs):
+		self.__trainer.set_epochs(epochs)
+		return self
+
+	def with_analitic (self, analitic):
+		self.__trainer.set_analitic(analitic)
+		return self
 

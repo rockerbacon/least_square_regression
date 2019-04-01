@@ -1,6 +1,6 @@
-from ai import LMSTrainer
+from ai import LMSTrainerBuilder, absolute_error_stop_function
 from input import EnergyDataReader, RandomDataGenerator
-from output import DatasetReadingObserver
+from output import DatasetReaderObserver, TrainerObserver
 import sys
 import math
 
@@ -10,30 +10,36 @@ else:
 	output_file_path = sys.argv[1]
 
 #reader = EnergyDataReader()
-reader = RandomDataGenerator(lambda theta0: theta0**2 + theta0*3 - 2, 1, 20, -20, 20)
+reader = RandomDataGenerator(lambda x: x*5 - 2, 1, 20, -20, 20)
 
-dataset_reading_observer = DatasetReadingObserver(sys.stdout)
-reader.attach(dataset_reading_observer)
+dataset_reader_observer = DatasetReaderObserver(sys.stdout)
+reader.attach(dataset_reader_observer)
 
 y, x = reader.read()
 
-trainPercentage = 0.7
-trainLimit = math.floor(trainPercentage*len(x))
-trainX = x[:trainLimit]
-trainY = y[:trainLimit]
-testX = x[trainLimit:]
-testY = y[trainLimit:]
+train_percentage = 0.7
+dataset_slice_point = math.floor(train_percentage*len(x))
+trainingset_x = x[:dataset_slice_point]
+trainingset_y = y[:dataset_slice_point]
+testingset_x = x[dataset_slice_point:]
+testingset_y = y[dataset_slice_point:]
 
-trainer = LMSTrainer()
+trainer_builder = LMSTrainerBuilder().with_defaults(trainingset_y, trainingset_x)
+trainer_builder.with_stop_function(absolute_error_stop_function)
 
-trainer.fit(trainX, trainY, adaptiveLearning=True, relativeThreshold=0.0000001)
+trainer = trainer_builder.build()
+
+trainer_observer = TrainerObserver(sys.stdout)
+trainer.attach(trainer_observer)
+
+trainer.fit()
 
 outputFile = open(output_file_path, "w")
-print("Testing...")
+print("\nTesting...")
 print("Error: 0.0")
 error = None
-for i in range(0, len(testX)):
-	predictionError = abs(trainer.predict(testX[i])-testY[i])
+for i in range(0, len(testingset_x)):
+	predictionError = abs(trainer.predict(testingset_x[i])-testingset_y[i])
 	if error is None:
 		error = predictionError
 	else:

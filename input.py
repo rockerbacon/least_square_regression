@@ -2,10 +2,11 @@ import csv
 import numpy
 import random
 from exceptions import AbstractMethodCallError
+from output import Observable
 
-class DatasetReader():
+class DatasetReader(Observable):
 	def __init__(self):
-		self.__observers = []
+		super().__init__()
 		self.__is_prepared_for_reading = False
 
 	def prepare_for_reading (self, number_of_entries, number_of_variables):
@@ -13,13 +14,6 @@ class DatasetReader():
 		self.__x = numpy.array([[0.0 for j in range(0, number_of_variables)] for i in range(0, len(self.__y))])
 		self.__current_row = 0
 		self.__is_prepared_for_reading = True
-
-
-	def attach (self, observer):
-		self.__observers.append(observer)
-
-	def notify_observers (self):
-		for observer in self.__observers: observer.update(self)
 
 	def total_data_size (self):
 		return len(self.__y)
