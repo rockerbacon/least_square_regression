@@ -53,11 +53,13 @@ class TrainerObserver (Observer):
 				self.__training_has_begun = True
 				self.__output.write("\nTraining...\n")
 			else:
-				self.__output.write("\033[5A\r")
+				self.__output.write("\033[7A\r")
 
-			self.__output.write("Iteration:\t\t" + str(trainer.get_current_iteration()) + "              \n")
+			self.__output.write("Iteration:\t\t" + str(trainer.get_current_iteration()) + "\t" + trainer.get_timer().get_last_tick_interval() + "              \n")
 			self.__output.write("Relative error:\t\t" + str(trainer.get_relative_error()) + "              \n")
 			self.__output.write("Absolute error:\t\t" + str(trainer.get_absolute_error()) + "              \n")
 			self.__output.write("Convergence rate:\t{0:.2f}%".format(100.0*trainer.get_convergence_rate()) + "              \n")
 			self.__output.write("Learning bias:\t\t" + str(trainer.get_learning_bias()) + "              \n")
+			self.__output.write("Avg iteration time:\t" + trainer.get_timer().get_average_tick_interval() + "              \n")
+			self.__output.write("Elapsed time:\t\t" + trainer.get_timer().get_total_elapsed_time() + "              \n")
 

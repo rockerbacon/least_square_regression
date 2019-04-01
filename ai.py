@@ -4,6 +4,7 @@ import numpy
 import random
 from output import Observable
 from thread_manager import ThreadManager
+from clock import Timer
 
 #function theta[0] + theta[1]*x[0] + theta[2]*x[1] + ... + theta[n+1]*x[n]
 def linear_function (x, theta):
@@ -65,6 +66,8 @@ class LMSTrainer(BaseEstimator, Observable):
 
 		self.__trained = False
 
+		self.__timer = Timer()
+
 	def set_prediction_function (self, function):
 		self.__predict = function
 
@@ -108,6 +111,9 @@ class LMSTrainer(BaseEstimator, Observable):
 	def get_learning_bias (self):
 		return self.__learning_bias
 
+	def get_timer(self):
+		return self.__timer
+
 	def is_trained (self):
 		return self.__trained
 
@@ -136,6 +142,7 @@ class LMSTrainer(BaseEstimator, Observable):
 	def fit(self):
 
 		self.notify_observers()
+		self.__timer.begin()
 
 		if self.__analitic:
 			# TODO: FAZER POR MATRIZES
@@ -161,6 +168,7 @@ class LMSTrainer(BaseEstimator, Observable):
 					for cost in costs:
 						self.__theta[cost["theta_index"]] -= self.__learning_bias*cost["derived_cost"]
 
+					self.__timer.tick()
 					self.notify_observers()
 
 		self.__trained = True

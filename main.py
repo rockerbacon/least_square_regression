@@ -30,7 +30,7 @@ testingset_y = y[dataset_slice_point:]
 trainer_builder = LMSTrainerBuilder().with_defaults(trainingset_y, trainingset_x)
 
 trainer_builder.with_error_evaluation_function(lambda y, x, theta, prediction_function: minibatch_error_evaluation_function(y, x, theta, prediction_function, 0.05))
-trainer_builder.with_learning_bias(0.00000000007)
+trainer_builder.with_learning_bias(0.00000000002)
 trainer_builder.with_initial_theta_values([0 for i in range(len(x[0])+1)])
 
 # trainer_builder.with_error_evaluation_function(batch_error_evaluation_function)
