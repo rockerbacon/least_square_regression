@@ -53,8 +53,9 @@ class TrainerObserver (Observer):
 				self.__training_has_begun = True
 				self.__output.write("\nTraining...\n")
 			else:
-				self.__output.write("\033[4A\r")
+				self.__output.write("\033[5A\r")
 
+			self.__output.write("Iteration:\t\t" + str(trainer.get_current_iteration()) + "              \n")
 			self.__output.write("Relative error:\t\t" + str(trainer.get_relative_error()) + "              \n")
 			self.__output.write("Absolute error:\t\t" + str(trainer.get_absolute_error()) + "              \n")
 			self.__output.write("Convergence rate:\t{0:.2f}%".format(100.0*trainer.get_convergence_rate()) + "              \n")
