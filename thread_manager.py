@@ -1,6 +1,7 @@
 from os import cpu_count
-from threading import Thread, Lock, Condition
+from threading import Thread, Lock, Condition, currentThread
 from exceptions import AbstractMethodCallError
+from time import sleep
 
 class ManagedFunction (Thread):
 	def __init__(self, function, args, manager):
@@ -28,12 +29,14 @@ class ThreadManager ():
 
 		self.__returned_values = []
 
+
 	def attach(self, function, args):
 		self.__functions.append({"function": function, "args": args})
 
 	def notify_return(self, return_value):
 
 		with self.__function_queue_lock:
+
 			self.__returned_values.append(return_value)
 
 			if len(self.__function_queue) > 0:
@@ -44,13 +47,12 @@ class ThreadManager ():
 					self.__all_threads_finished_condition.notify()
 
 	def execute_all (self):
-		self.__function_queue = [ManagedFunction(f["function"], f["args"], self) for f in self.__functions]
-		threads = self.__function_queue.copy()
-		for i in range(self.__cpu_cores):
-			thread = self.__function_queue.pop(0)
-			thread.start()
-
 		with self.__all_threads_finished_condition:
+			self.__function_queue = [ManagedFunction(f["function"], f["args"], self) for f in self.__functions]
+			for i in range(self.__cpu_cores):
+				thread = self.__function_queue.pop(0)
+				thread.start()
+
 			self.__all_threads_finished_condition.wait()
 
 		return self.__returned_values

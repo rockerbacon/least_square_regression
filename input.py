@@ -44,11 +44,12 @@ class DatasetReader(Observable):
 class EnergyDataReader(DatasetReader):
 	def __init__(self, input_file):
 		super().__init__()
+		random.seed()
 
 		self.__dataset = list(csv.reader(input_file, delimiter=","))
 
 		self.__dataset = self.__dataset[1:] #skip header
-		#random.shuffle(self.__dataset)
+		random.shuffle(self.__dataset)
 
 		self.__x_range_lower = 2
 		self.__x_range_upper = 27
